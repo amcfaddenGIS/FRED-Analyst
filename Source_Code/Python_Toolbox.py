@@ -298,9 +298,19 @@ class FRED_and_FRFD_Calculator:
                                            datatype="DEFolder",
                                            parameterType="Required",
                                            direction="Input")
+        FRED_FRFD_Statistics = arcpy.Parameter(displayName="FRED & FRFD Statistics",
+                                               name="output_location",
+                                               datatype="GPBoolean",
+                                               parameterType="Optional",
+                                               direction="Input")
+        Peak_FRFD = arcpy.Parameter(displayName="FRED & FRFD Statistics",
+                                    name="output_location",
+                                    datatype="GPBoolean",
+                                    parameterType="Optional",
+                                    direction="Input")
         Image_Pass_Times.enabled = False
         Ambient_Temperature.value = 289
-        params = [Input_Raster_Directory, Ambient_Temperature, Pass_Time_Table, Image_Pass_Times, Output_Directory]
+        params = [Input_Raster_Directory, Ambient_Temperature, Pass_Time_Table, Image_Pass_Times, Output_Directory, FRED_FRFD_Statistics, Peak_FRFD]
         return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
