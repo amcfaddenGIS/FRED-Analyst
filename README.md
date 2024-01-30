@@ -43,8 +43,6 @@ The time series of FRFD can be used to calculate the Fire Radiative Energy Densi
 To the right is an FRFD time series that illustrates the calculation of FRED. This is formulated through a time series of satellite or aerial images. The X axis is the calculated FRFD, and the Y axis is the time (seconds) since imagery collection had begun. Each point that formulates the time series is an individual FRFD estimation. The light blue area shaded below the curve is the time integrated sum (FRED) below the FRFD time series. 
 
 <br></br>
-<br></br>
-<br></br>
 
 ## **The ArcGIS Toolbox**
 
