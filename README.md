@@ -4,7 +4,7 @@
 <div align="center">
   <img src="https://github.com/amcfaddenGIS/FRED-Analyst/blob/main/Images/Spatial_Distribution.png" alt="Image with Text" />
 </div>
-<p align="center"><b>Figure 1:</b> Fire Radiative Energy Density estimations from the Thomas Fire</p>
+<p align="center">Fire Radiative Energy Density estimations from the Thomas Fire</p>
 
 ## **Background**
 
