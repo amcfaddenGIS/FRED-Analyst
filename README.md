@@ -39,6 +39,7 @@ The time series of FRFD can be used to calculate the Fire Radiative Energy Densi
   <img src="https://latex.codecogs.com/svg.image?%5Cbegin%7Bmatrix%7D%5C%5Ct=%5Ctextrm%7BTime(s)%7D%5C%5CFRFD=%5Ctextrm%7BFire%20radiative%20flux%20density%20from%20each%20time%20series%20image%7D%5Cend%7Bmatrix%7D" alt="equation" />
 </div>
 
+<br></br>
 
 <img src="https://github.com/amcfaddenGIS/FRED-Analyst/blob/main/Images/Trap_rule.png" width = "550" height = "350" align = "right" alt="FRFD Temproal Plot" title="FRFD Temproal Plot">
 <br></br>
