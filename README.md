@@ -39,9 +39,10 @@ The time series of FRFD can be used to calculate the Fire Radiative Energy Densi
   <img src="https://latex.codecogs.com/svg.image?%5Cbegin%7Bmatrix%7D%5C%5Ct=%5Ctextrm%7BTime(s)%7D%5C%5CFRFD=%5Ctextrm%7BFire%20radiative%20flux%20density%20from%20each%20time%20series%20image%7D%5Cend%7Bmatrix%7D" alt="equation" />
 </div>
 
+<img src="https://github.com/amcfaddenGIS/FRED-Analyst/blob/main/Images/Trap_rule.png" width = "500" height = "325" align = "right" alt="FRFD Temproal Plot" title="FRFD Temproal Plot">
+
 <br></br>
 
-<img src="https://github.com/amcfaddenGIS/FRED-Analyst/blob/main/Images/Trap_rule.png" width = "500" height = "325" align = "right" alt="FRFD Temproal Plot" title="FRFD Temproal Plot">
 To the right is an FRFD time series that illustrates the calculation of FRED. This is formulated through a time series of satellite or aerial images. The X axis is the calculated FRFD, and the Y axis is the time (seconds) since imagery collection had begun. Each point that formulates the time series is an individual FRFD estimation. The light blue area shaded below the curve is the time integrated sum (FRED) below the FRFD time series. 
 
 
