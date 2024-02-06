@@ -761,7 +761,87 @@ class Binary_Classifiers:
     def __init__(self):
         self.label = "Binary Classifer"
         self.description = "Classifies individual pixels based on their temporal characteristics. Includes 3 classifcations: Burned, Completed, Obscured"
+    def getParameterInfo(self):
+        """Define the tool parameters."""
+        # To edit parameter descriptions, you must edit the associated XML file
+        Input_Temp_Raster = arcpy.Parameter(
+            displayName="Input Temperature Raster",
+            name="temp_raster",
+            datatype="DERasterDataset",
+            parameterType="Required",
+            direction="Input")
+        Input_FRFD_Raster = arcpy.Parameter(
+            displayName="Input FRFD Raster",
+            name="frfd_raster",
+            datatype="DERasterDataset",
+            parameterType="Required",
+            direction="Input")
+        Ambient_Temperature = arcpy.Parameter(displayName="Ambient Temperature",
+            name="ambient_temp",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input")
+        Burned_Temperature = arcpy.Parameter(displayName="Minimum Burn Temperature",
+            name="burn_temp",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input")
+        Complete_Percentage = arcpy.Parameter(displayName="Complete Profile Percentage",
+                                             name="complete_prof",
+                                             datatype="GPString",
+                                             parameterType="Required",
+                                             direction="Input")
+        Obscuration_Percentage = arcpy.Parameter(displayName="Obscuration Percentage",
+                                             name="obscur_percentage",
+                                             datatype="GPString",
+                                             parameterType="Required",
+                                             direction="Input")
+        params = [Input_Temp_Raster, Input_FRFD_Raster, Ambient_Temperature, Burned_Temperature, Complete_Percentage, Obscuration_Percentage]
+    def isLicensed(self):
+        """Set whether the tool is licensed to execute."""
+        return True
 
+    def updateParameters(self, parameters):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+    def execute(self, parameters, messages):
+        """The source code of the tool."""
+        # This is where classifier code goes
+        # Create multiple classifier functions
+        # First use the burning classifier
+        # then use the completion classifier
+        # THen use the obscuration classifier
+        def Create_Output_Raster(raster_info, array):
+            "Output raster through GDAL"
+            pass
+        def Get_Raster_Info(raster):
+            "Extract raster information through GDAL"
+            r = gdal.Open(raster)
+            cols = r.RasterXSize
+            rows = r.RasterYSize
+            bands = r.RasterCount
+            geotransform = r.GetGeoTransform()
+            projection = r.GetProjection()
+            metadata = r.GetMetadata()
+            raster_info = {
+                'cols': cols,
+                'rows': rows,
+                'bands': bands,
+                'projection': projection,
+                'metadata': metadata,
+                'geotransform':geotransform
+            }
+            return raster_info
+        def Burning_Classifier(raster, min_temp):
+            # Creates output array and raster
+            pass
+        def Complete_Classifier(burn_raster, raster, percentage):
+            # Creates output array and raster
+            pass
+        def Obscuration_Classifier(complete_raster, raster, obscuration_percentage):
+            # Creates output array and raster
+            pass
 
 
 
