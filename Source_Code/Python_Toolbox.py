@@ -247,13 +247,8 @@ Add multiple booleans:
     - Output Statistics?
     - Automated Map?
     
-Start with Peak FRFD and output statistics and move on from there
+Will create independent function that will calculate the peak FRFD, as well as the image pass time when the peak was reached
 
-FRED_FRFD_Statistics = arcpy.Parameter(displayName="FRED & FRFD Statistics",
-                                           name="output_location",
-                                           datatype="GPBoolean",
-                                           parameterType="Optional",
-                                           direction="Input")
 Peak_FRFD = arcpy.Parameter(displayName="FRED & FRFD Statistics",
                                            name="output_location",
                                            datatype="GPBoolean",
@@ -298,19 +293,14 @@ class FRED_and_FRFD_Calculator:
                                            datatype="DEFolder",
                                            parameterType="Required",
                                            direction="Input")
-        FRED_FRFD_Statistics = arcpy.Parameter(displayName="FRED & FRFD Statistics",
-                                               name="output_location",
-                                               datatype="GPBoolean",
-                                               parameterType="Optional",
-                                               direction="Input")
-        Peak_FRFD = arcpy.Parameter(displayName="FRED & FRFD Statistics",
-                                    name="output_location",
+        Peak_FRFD = arcpy.Parameter(displayName="Peak FRFD Raster",
+                                    name="Peak_FRFD_Raster",
                                     datatype="GPBoolean",
                                     parameterType="Optional",
                                     direction="Input")
         Image_Pass_Times.enabled = False
         Ambient_Temperature.value = 289
-        params = [Input_Raster_Directory, Ambient_Temperature, Pass_Time_Table, Image_Pass_Times, Output_Directory, FRED_FRFD_Statistics, Peak_FRFD]
+        params = [Input_Raster_Directory, Ambient_Temperature, Pass_Time_Table, Image_Pass_Times, Output_Directory, Peak_FRFD]
         return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
@@ -326,7 +316,6 @@ class FRED_and_FRFD_Calculator:
             flds = [f.name for f in arcpy.ListFields(times)]
             parameters[3].filter.list = flds
         return
-
     def updateMessages(self, parameters):
         """Modify the messages created by internal validation for each tool
         parameter. This method is called after internal validation."""
@@ -390,17 +379,23 @@ class FRED_and_FRFD_Calculator:
         FRFD_Rasters = []
         s = scipy.constants.sigma
         FRFD_Raster_Locations = []
+        at = int(ambient_temperature)
         # Consider creating output statistics for FRED and FRFD Rasters
         for i in range(0, len(kelvin_rasters)):
             r = arcpy.Raster(kelvin_rasters[i])
-            at = int(ambient_temperature)
-            frfd_raster = s*(r**4 - at**4)
+            reclass_range = arcpy.sa.RemapRange([[r.minimum, r.maximum, at]])
+            reclass_ambient = arcpy.sa.Reclassify(kelvin_rasters[i], remap=reclass_range, reclass_field="VALUE")
+            arcpy.AddMessage(reclass_ambient.minimum)
+            arcpy.AddMessage(reclass_ambient.maximum)
+            frfd_raster = s*(r**4 - reclass_ambient**4)
             FRFD_Rasters.append(frfd_raster)
             # Output Raster Location
             FRFD_Raster_Locations.append("{}/{}".format(FRFDs_output_location, 'FRFD_{}.tif'.format(i+1)))
             arcpy.AddMessage("{}".format(arcpy.Raster(FRFD_Rasters[i]).maximum))
             frfd_raster.save("{}/{}".format(FRFDs_output_location, 'FRFD_{}.tif'.format(i+1)))
             del frfd_raster
+            del r
+            del reclass_ambient
         del kelvin_rasters
         # After calculating FRFD, get the pass times for FRED calculations
         pass_times = []
@@ -439,14 +434,32 @@ class FRED_and_FRFD_Calculator:
         arcpy.AddMessage("FRED has been calculated")
         del FREDs
         # Save the output FRED raster to the identified location
-        total_fred.save(os.path.join(FRED_output_location, "FRED_{}".format(ambient_temperature)))
+        total_fred.save(os.path.join(FRED_output_location, "FRED_{}.tif".format(ambient_temperature)))
         arcpy.AddMessage("FRED has been exported")
         del total_fred
         # Create output string for composite band raster function
-        frfd_rasters = ";".join(FRFDs_output_location)
-        arcpy.CompositeBands_management(in_rasters=frfd_rasters, out_raster=FRFD_output_location)
+        if parameters[5].value:
+            # Calculate the maximum value for all FRFD rasters
+            max_frfd = arcpy.ia.Max(FRFD_Raster_Locations, extent_type="IntersectionOf", cellsize_type="FirstOf")
+            arcpy.AddMessage("Peak FRFD has been calculated")
+            # Save the Max FRFD raster
+            max_frfd.save(os.path.join(FRFD_output_location, "Peak_FRFD_{}.tif".format(ambient_temperature)))
+            arcpy.AddMessage("Peak FRFD has been exported")
+            del max_frfd
+            # Determine the image pass when the maximum pixel value was reached
+            max_frfd_time = arcpy.ia.HighestPosition(rasters=FRFD_Raster_Locations, extent_type="IntersectionOf", cellsize_type="FirstOf")
+            # Save the maximum frfd time value
+            max_frfd_time.save(os.path.join(FRFD_output_location, "Peak_FRFD_Time_{}.tif".format(ambient_temperature)))
+            del max_frfd_time
+            # Create the FRFD Stack
+            arcpy.CompositeBands_management(in_rasters=";".join(FRFD_Raster_Locations), out_raster="{}/{}".format(FRFD_output_location, "FRFD_{}.tif".format(ambient_temperature)))
+        else:
+            # If the Peak FRFD option is not checked, only the output stack will be provided.
+            # Users can calculate the maximum frfd and time on their own.
+            arcpy.CompositeBands_management(in_rasters=";".join(FRFD_Raster_Locations),
+                                            out_raster="{}/{}".format(FRFD_output_location,
+                                            "FRFD_{}".format(ambient_temperature)))
         arcpy.AddMessage("FRFD stack has been exported")
-        del frfd_rasters
 
     def postExecute(self, parameters):
         """This method takes place after outputs are processed and
@@ -493,6 +506,7 @@ class Ash_Temperature_Adjustor:
                                            datatype="DEFolder",
                                            parameterType="Required",
                                            direction="Input")
+
         Image_Pass_Times.enabled = False
         Ambient_Temperature.value = 289
         params.append(Input_Raster_Directory)
@@ -728,7 +742,7 @@ class Ash_Temperature_Adjustor:
         arcpy.AddMessage("FRED has been calculated")
         del FREDs
         # Save the output FRED raster to the identified location
-        total_fred.save(os.path.join(FRED_output_location, "FRED_{}".format(ambient_temperature)))
+        total_fred.save(os.path.join(FRED_output_location, "FRED_{}.tif".format(ambient_temperature)))
         arcpy.AddMessage("FRED has been exported")
         del total_fred
         # Create output string for composite band raster function
@@ -747,7 +761,6 @@ class Binary_Classifiers:
     def __init__(self):
         self.label = "Binary Classifer"
         self.description = "Classifies individual pixels based on their temporal characteristics. Includes 3 classifcations: Burned, Completed, Obscured"
-
 
 
 
