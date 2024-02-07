@@ -776,6 +776,17 @@ class Binary_Classifiers:
             datatype="DERasterDataset",
             parameterType="Required",
             direction="Input")
+        Input_FRED_Raster = arcpy.Parameter(
+            displayName="Input FRED Raster",
+            name="fred_raster",
+            datatype="DERasterDataset",
+            parameterType="Required",
+            direction="Input")
+        Pass_Time_Table = arcpy.Parameter(displayName="Pass Time Table",
+                                          name="pass_time_table",
+                                          datatype="DETable",
+                                          parameterType="Required",
+                                          direction="Input")
         Ambient_Temperature = arcpy.Parameter(displayName="Ambient Temperature",
             name="ambient_temp",
             datatype="GPString",
@@ -796,7 +807,8 @@ class Binary_Classifiers:
                                              datatype="GPString",
                                              parameterType="Required",
                                              direction="Input")
-        params = [Input_Temp_Raster, Input_FRFD_Raster, Ambient_Temperature, Burned_Temperature, Complete_Percentage, Obscuration_Percentage]
+        params = [Input_Temp_Raster, Input_FRFD_Raster, Ambient_Temperature, Burned_Temperature, Complete_Percentage, Obscuration_Percentage, Input_FRED_Raster, Pass_Time_Table]
+        return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
         return True
@@ -805,6 +817,20 @@ class Binary_Classifiers:
         """Modify the values and properties of parameters before internal
         validation is performed.  This method is called whenever a parameter
         has been changed."""
+        return
+
+    def updateMessages(self, parameters):
+        """Modify the messages created by internal validation for each tool
+        parameter. This method is called after internal validation."""
+        parameters[4].clearMessage()
+        parameters[5].clearMessage()
+        if parameters[4].value:
+            if int(parameters[4].value) > 100:
+                parameters[4].setErrorMessage("Percentage value is greater than 100%. Value must be lower than 100%")
+        if parameters[5].value:
+            if int(parameters[5].value) > 100:
+                parameters[5].setWarningMessage("Percetange value is greater than 100%")
+        return
     def execute(self, parameters, messages):
         """The source code of the tool."""
         # This is where classifier code goes
@@ -812,8 +838,24 @@ class Binary_Classifiers:
         # First use the burning classifier
         # then use the completion classifier
         # THen use the obscuration classifier
-        def Create_Output_Raster(raster_info, array):
+        def Create_Output_Binary_Raster(raster_info, array, output_location, raster_name):
+
             "Output raster through GDAL"
+            # Create data source
+            driver_tiff = gdal.GetDriverByName("GTiff")
+            driver_tiff.Register()
+            file_path_output = "{}/{}".format(output_location, raster_name)
+            geotransform = raster_info["geotransform"]
+            cols = raster_info["cols"]
+            rows = raster_info["rows"]
+            projection = raster_info["projection"]
+            metadata = raster_info["metadata"]
+            create_output = driver_tiff.Create(file_path_output, cols, rows, 1, gdal.GDT_Int8)
+            band = create_output.GetRasterBand(1)
+            band.WriteArray(array)
+            create_output.SetProjection(projection)
+            create_output.SetGeoTransform(geotransform)
+            create_output.SetMetadata(metadata)
             pass
         def Get_Raster_Info(raster):
             "Extract raster information through GDAL"
@@ -833,14 +875,129 @@ class Binary_Classifiers:
                 'geotransform':geotransform
             }
             return raster_info
-        def Burning_Classifier(raster, min_temp):
+        def Burning_Classifier(raster, min_temp, output_location):
             # Creates output array and raster
-            pass
-        def Complete_Classifier(burn_raster, raster, percentage):
+            # Use the output from this classifier for the next classifiers
+            # Take a raster object and reclass it through the reclassify tool in ArcPy
+            r = arcpy.Raster(raster)
+            reclass_range = arcpy.sa.RemapRange([[r.minimum, min_temp, 0], [min_temp, r.maximum, 1]])
+            burn_reclass = arcpy.sa.Reclassify(in_raster=raster,
+                                reclass_field='value',
+                                remap=reclass_range)
+            save_location = "{}/burn_raster_{}.tif".format(output_location, min_temp)
+            burn_reclass.save(save_location)
+            return save_location
+        def Complete_Classifier(burn_raster, raster, percentage, time, output_location):
             # Creates output array and raster
-            pass
-        def Obscuration_Classifier(complete_raster, raster, obscuration_percentage):
+            # Analyze the shape of each individual profile
+            # Create an output raster name for the binary classifier
+            output_name = f"Complete_Class_{percentage}.tif"
+            raster_info = Get_Raster_Info(raster)
+            br_raster_info = Get_Raster_Info(burn_raster)
+            # Create list to store list of band arrays
+            array_list = []
+            cols = raster_info["cols"]
+            rows = raster_info["rows"]
+            # Open frfd raster
+            r = gdal.Open(raster)
+            # Open burn raster
+            br = gdal.Open(burn_raster)
+            # Iterate through every band in FRFD raster
+            for i in range(1, raster_info["bands"] + 1):
+                b = r.GetRasterBand(i)
+                array_list.append(b.ReadAsArray(0,0,cols,rows))
+            # Create stack of arrays
+            r_stack = np.dstack(array_list)
+            del array_list
+            # Create burn raster array
+            b = br.GetRasterBand(1)
+            br_array = b.ReadAsArray(0,0, br_raster_info['cols'], br_raster_info['rows'])
+            # Create empty array for populating classified values
+            class_array = np.zeros_like(br_array)
+            # Iteratre through each pixel
+            for i in range(0, rows):
+                for j in range(0, cols):
+                    if br_array[i][j] == 0:
+                        class_array[i][j] = 0
+                    else:
+                        FRFD_stack = r_stack[i][j]
+                    # Create list for cumulative FRED
+                        Cumulative_FRED = []
+                        Cumulative_FRED_Percent = []
+                        FRED_List = []
+                        Tot_FRED = 0
+                        for f in range(1, len(FRFD_stack)):
+                            FRFD_2 = FRFD_stack[f]
+                            # Call the first FRFD array
+                            FRFD_1 = FRFD_stack[f - 1]
+                            # Call the first Time in the list
+                            date = datetime.now().date()
+                            # First time
+                            t1 = datetime.combine(date, time[f - 1])
+                            # Second time
+                            t2 = datetime.combine(date, time[f])
+                            # Get the difference between the two time classes
+                            delta = t2 - t1
+                            # Sum up the FRFD calculations
+                            FRFD_Sum = (FRFD_2 + FRFD_1)
+                            # Any values less than 0 are converted to 0 (pixels that have temperatures below ambient
+                            if FRFD_Sum <= 0:
+                                FRFD_Sum = 0
+                            # Calculate the FRED and add it to the FRED list
+                            FRED = ((FRFD_Sum) * delta.seconds) * 0.5
+                            Tot_FRED += FRED
+                            Cumulative_FRED.append(Tot_FRED)
+                            FRED_List.append(FRED)
+                        # Calculate Cumulative FRED Percent
+                        Total_FRED = sum(FRED_List)
+                        for fr in Cumulative_FRED:
+                            Cumulative_FRED_Percent.append((fr/Total_FRED) * 100)
+                        if Cumulative_FRED_Percent[len(Cumulative_FRED_Percent) - 2] > percentage:
+                            class_array[i][j] = 1
+                        else:
+                            class_array[i][j] = 0
+            Create_Output_Binary_Raster(raster_info=br_raster_info,
+                                        array = class_array,
+                                        output_location=output_location,
+                                        raster_name=output_name)
+            class_raster_data_source = f"{output_location}/{output_name}"
+            # Use the returned array as the complete raster for the obscuration classifier
+            return class_raster_data_source
+        def Obscuration_Classifier(complete_raster, raster, obscuration_percentage, output_location):
+            # Create output name for raster
+            output_name = f"Obscuration_Class_{obscuration_percentage}.tif"
             # Creates output array and raster
+            raster_info = Get_Raster_Info(raster)
+            br_raster_info = Get_Raster_Info(complete_raster)
+            array_list = []
+            cols = raster_info["cols"]
+            rows = raster_info["rows"]
+            # Open frfd raster
+            r = gdal.Open(raster)
+            # Open burn raster
+            co = gdal.Open(complete_raster)
+            # Iterate through every band in FRFD raster
+            for i in range(1, raster_info["bands"] + 1):
+                b = r.GetRasterBand(i)
+                array_list.append(b.ReadAsArray(0, 0, cols, rows))
+            # Create stack of arrays
+            r_stack = np.dstack(array_list)
+            del array_list
+            # Create burn raster array
+            b = co.GetRasterBand(1)
+            c_array = b.ReadAsArray(0, 0, br_raster_info['cols'], br_raster_info['rows'])
+            # Create empty array for populating classified values
+            class_array = np.zeros_like(c_array)
+            for i in range(0, rows):
+                for j in range(0, cols):
+                    if c_array[i][j] == 0:
+                        class_array[i][j] = 0
+                    else:
+                        FRFD_stack = r_stack[i][j]
+
+
+
+
             pass
 
 
