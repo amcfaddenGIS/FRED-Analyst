@@ -765,7 +765,7 @@ class Binary_Classifiers:
         """Define the tool parameters."""
         # To edit parameter descriptions, you must edit the associated XML file
         Input_Temp_Raster = arcpy.Parameter(
-            displayName="Input Temperature Raster",
+            displayName="Peak FRFD Raster",
             name="temp_raster",
             datatype="DERasterDataset",
             parameterType="Required",
@@ -776,22 +776,17 @@ class Binary_Classifiers:
             datatype="DERasterDataset",
             parameterType="Required",
             direction="Input")
-        Input_FRED_Raster = arcpy.Parameter(
-            displayName="Input FRED Raster",
-            name="fred_raster",
-            datatype="DERasterDataset",
-            parameterType="Required",
-            direction="Input")
         Pass_Time_Table = arcpy.Parameter(displayName="Pass Time Table",
                                           name="pass_time_table",
                                           datatype="DETable",
                                           parameterType="Required",
                                           direction="Input")
-        Ambient_Temperature = arcpy.Parameter(displayName="Ambient Temperature",
-            name="ambient_temp",
-            datatype="GPString",
-            parameterType="Required",
-            direction="Input")
+        Image_Pass_Times = arcpy.Parameter(displayName="Image Pass Time Field",
+                                           name="image_pass_times",
+                                           datatype="GPString",
+                                           parameterType="Required",
+                                           direction="Input",
+                                           multiValue=True)
         Burned_Temperature = arcpy.Parameter(displayName="Minimum Burn Temperature",
             name="burn_temp",
             datatype="GPString",
@@ -807,7 +802,15 @@ class Binary_Classifiers:
                                              datatype="GPString",
                                              parameterType="Required",
                                              direction="Input")
-        params = [Input_Temp_Raster, Input_FRFD_Raster, Ambient_Temperature, Burned_Temperature, Complete_Percentage, Obscuration_Percentage, Input_FRED_Raster, Pass_Time_Table]
+        Output_Directory = arcpy.Parameter(displayName="Output Location",
+                                           name="output_location",
+                                           datatype="DEFolder",
+                                           parameterType="Required",
+                                           direction="Input")
+        Complete_Percentage.value = 95
+        Obscuration_Percentage.value = 40
+        Burned_Temperature.value = 473
+        params = [Input_Temp_Raster, Input_FRFD_Raster, Burned_Temperature, Complete_Percentage, Obscuration_Percentage, Pass_Time_Table, Image_Pass_Times, Output_Directory]
         return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
@@ -817,19 +820,24 @@ class Binary_Classifiers:
         """Modify the values and properties of parameters before internal
         validation is performed.  This method is called whenever a parameter
         has been changed."""
+        if parameters[5].altered == True:
+            parameters[6].enabled = True
+            times = parameters[5].ValueAsText
+            flds = [f.name for f in arcpy.ListFields(times)]
+            parameters[6].filter.list = flds
         return
 
     def updateMessages(self, parameters):
         """Modify the messages created by internal validation for each tool
         parameter. This method is called after internal validation."""
+        parameters[3].clearMessage()
         parameters[4].clearMessage()
-        parameters[5].clearMessage()
+        if parameters[3].value:
+            if int(parameters[3].value) > 100:
+                parameters[3].setErrorMessage("Percentage value is greater than 100%. Value must be lower than 100%")
         if parameters[4].value:
             if int(parameters[4].value) > 100:
-                parameters[4].setErrorMessage("Percentage value is greater than 100%. Value must be lower than 100%")
-        if parameters[5].value:
-            if int(parameters[5].value) > 100:
-                parameters[5].setWarningMessage("Percetange value is greater than 100%")
+                parameters[4].setWarningMessage("Percetange value is greater than 100%")
         return
     def execute(self, parameters, messages):
         """The source code of the tool."""
@@ -838,6 +846,7 @@ class Binary_Classifiers:
         # First use the burning classifier
         # then use the completion classifier
         # THen use the obscuration classifier
+        # Output the parameter values as inputs for the other functions
         def Create_Output_Binary_Raster(raster_info, array, output_location, raster_name):
 
             "Output raster through GDAL"
@@ -856,7 +865,6 @@ class Binary_Classifiers:
             create_output.SetProjection(projection)
             create_output.SetGeoTransform(geotransform)
             create_output.SetMetadata(metadata)
-            pass
         def Get_Raster_Info(raster):
             "Extract raster information through GDAL"
             r = gdal.Open(raster)
@@ -876,11 +884,15 @@ class Binary_Classifiers:
             }
             return raster_info
         def Burning_Classifier(raster, min_temp, output_location):
+            s = scipy.constants.sigma
             # Creates output array and raster
             # Use the output from this classifier for the next classifiers
             # Take a raster object and reclass it through the reclassify tool in ArcPy
+            file_name = os.path.basename(raster)
+            at = int(file_name[10:13])
+            min_frfd = s*(min_temp**4 - at**4)
             r = arcpy.Raster(raster)
-            reclass_range = arcpy.sa.RemapRange([[r.minimum, min_temp, 0], [min_temp, r.maximum, 1]])
+            reclass_range = arcpy.sa.RemapRange([[r.minimum, min_frfd, 0], [min_frfd, r.maximum, 1]])
             burn_reclass = arcpy.sa.Reclassify(in_raster=raster,
                                 reclass_field='value',
                                 remap=reclass_range)
@@ -921,6 +933,7 @@ class Binary_Classifiers:
                         class_array[i][j] = 0
                     else:
                         FRFD_stack = r_stack[i][j]
+                        arcpy.AddMessage(FRFD_stack)
                     # Create list for cumulative FRED
                         Cumulative_FRED = []
                         Cumulative_FRED_Percent = []
@@ -990,16 +1003,84 @@ class Binary_Classifiers:
             class_array = np.zeros_like(c_array)
             for i in range(0, rows):
                 for j in range(0, cols):
+                    # If the profile is not complete, the pixel is classified as 0 for obscured
                     if c_array[i][j] == 0:
                         class_array[i][j] = 0
                     else:
+                        # If it is a complete profile, the profile is extracted from the dstack
                         FRFD_stack = r_stack[i][j]
-
-
-
-
-            pass
-
+                        # Extract the peak profile portion of the temporal profile based on the location of the max FRFD
+                        Percents = []
+                        Peak_Profile = FRFD_stack[np.where(FRFD_stack == FRFD_stack.max())[0][0]:]
+                        arcpy.AddMessage(Peak_Profile)
+                        for d in range(1, len(Peak_Profile)):
+                            # Call the first FRFD
+                            FRFD_1 = Peak_Profile[d-1]
+                            # Call the second FRFD
+                            FRFD_2 = Peak_Profile[d]
+                            # Calculate the percent change between the two (should be negative)
+                            percent_change = ((FRFD_2 - FRFD_1)/(FRFD_1)) * 100
+                            Percents.append(percent_change)
+                        if max(Percents) > obscuration_percentage:
+                            if np.array(max(Percents)) == np.inf:
+                                class_array[i][j] = 0
+                            else:
+                                class_array[i][j] = 1
+                        else:
+                            class_array[i][j] = 0
+            Create_Output_Binary_Raster(raster_info=br_raster_info,
+                                        array=class_array,
+                                        output_location=output_location,
+                                        raster_name=output_name)
+        # Call all parameters
+        temp_raster = parameters[0].ValueAsText
+        frfd_raster = parameters[1].ValueAsText
+        burned_temp = int(parameters[2].ValueAsText)
+        complete_percent = int(parameters[3].ValueAsText)
+        obscuration_percent = int(parameters[4].ValueAsText)
+        time_table = parameters[5].ValueAsText
+        image_pass_time = parameters[6].ValueAsText
+        output_location = parameters[7].ValueAsText
+        # Create folder for saving files
+        Binary_Classifier_location = os.path.join(output_location + "/Binary_Classifiers")
+        # If the folder already exists delete the files and recreate the directory
+        if os.path.exists(Binary_Classifier_location):
+            filelist = os.listdir(Binary_Classifier_location)
+            if len(filelist) >= 0:
+                for f in filelist:
+                    os.remove(os.path.join(Binary_Classifier_location, f))
+            os.rmdir(Binary_Classifier_location)
+            os.mkdir(Binary_Classifier_location)
+        else:
+            os.mkdir(Binary_Classifier_location)
+        # Create list of times for the classifiers
+        pass_times = []
+        # Create a Search Cursor to retrieve values from a specific attribute in the table
+        with arcpy.da.SearchCursor(time_table, [image_pass_time]) as cursor:
+            for row in cursor:
+                pass_times.append(row[0])
+        # Run the burn classifier and call the burn classified raster source
+        arcpy.AddMessage("Running Burn Classifier")
+        burn_source = Burning_Classifier(raster = temp_raster,
+                           min_temp=burned_temp,
+                           output_location=Binary_Classifier_location)
+        arcpy.AddMessage("Burn Classifier Complete")
+        # Run the completion classifier and call the completion source
+        arcpy.AddMessage("Running Complete Classifier")
+        completion_source = Complete_Classifier(burn_raster=burn_source,
+                                                raster=frfd_raster,
+                                                percentage=complete_percent,
+                                                time=pass_times,
+                                                output_location=Binary_Classifier_location)
+        arcpy.AddMessage("Complete Classifier Complete")
+        del burn_source
+        del pass_times
+        arcpy.AddMessage("Running Obscuration Classifier")
+        Obscuration_Classifier(complete_raster=completion_source,
+                               raster=frfd_raster,
+                               obscuration_percentage=obscuration_percent,
+                               output_location=output_location)
+        arcpy.AddMessage("Obscuration Classifier Complete")
 
 
 
