@@ -892,7 +892,7 @@ class Binary_Classifiers:
             at = int(file_name[10:13])
             min_frfd = s*(min_temp**4 - at**4)
             r = arcpy.Raster(raster)
-            reclass_range = arcpy.sa.RemapRange([[r.minimum, min_frfd, 0], [min_frfd, r.maximum, 1]])
+            reclass_range = arcpy.sa.RemapRange([[r.minimum, min_frfd, 0], [min_frfd, r.maximum, 1, ['NoData','NoData', 0]]])
             burn_reclass = arcpy.sa.Reclassify(in_raster=raster,
                                 reclass_field='value',
                                 remap=reclass_range)
@@ -1081,7 +1081,6 @@ class Binary_Classifiers:
                                obscuration_percentage=obscuration_percent,
                                output_location=output_location)
         arcpy.AddMessage("Obscuration Classifier Complete")
-
 
 
 
