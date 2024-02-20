@@ -534,7 +534,7 @@ class Ash_Temperature_Adjustor:
         # This is where the conversion code goes
         # Create scratch folder for separated FRFDs
         # Use os.path.join with this location when calculating FRFD
-        def Create_Output_Binary_Raster(raster_info, array, output_location, raster_name):
+        def Create_Output_Multiband_Raster(raster_info, arrays, output_location, raster_name, n):
 
             "Output raster through GDAL"
             # Create data source
@@ -546,7 +546,26 @@ class Ash_Temperature_Adjustor:
             rows = raster_info["rows"]
             projection = raster_info["projection"]
             metadata = raster_info["metadata"]
-            create_output = driver_tiff.Create(file_path_output, cols, rows, 1, gdal.GDT_Int8)
+            create_output = driver_tiff.Create(file_path_output, cols, rows, n, gdal.GDT_Int32)
+            for i in range(1, len(arrays)+1):
+                band = create_output.GetRasterBand(i)
+                band.WriteArray(arrays[i-1])
+            create_output.SetProjection(projection)
+            create_output.SetGeoTransform(geotransform)
+            create_output.SetMetadata(metadata)
+        def Create_Output_Singleband_Raster(raster_info, array, output_location, raster_name):
+
+            "Output raster through GDAL"
+            # Create data source
+            driver_tiff = gdal.GetDriverByName("GTiff")
+            driver_tiff.Register()
+            file_path_output = "{}/{}".format(output_location, raster_name)
+            geotransform = raster_info["geotransform"]
+            cols = raster_info["cols"]
+            rows = raster_info["rows"]
+            projection = raster_info["projection"]
+            metadata = raster_info["metadata"]
+            create_output = driver_tiff.Create(file_path_output, cols, rows, 1, gdal.GDT_Int32)
             band = create_output.GetRasterBand(1)
             band.WriteArray(array)
             create_output.SetProjection(projection)
@@ -626,6 +645,8 @@ class Ash_Temperature_Adjustor:
             kelvin_rasters.append(k_raster)
         # Conver the list of rasters into a numpy dstack
         kelvin_stack = np.dstack(kelvin_rasters)
+        n_frfds = len(kelvin_rasters)
+        del kelvin_rasters
         # Extract extent of the rasters
         rows = kelvin_rasters[1].shape[0]
         cols = kelvin_rasters[1].shape[1]
@@ -726,47 +747,29 @@ class Ash_Temperature_Adjustor:
                     fred_array[i][j] = sum(FRED_list)
                     for ind, p in enumerate(FRFD_list):
                         kelvin_stack[ind][i][j] = p
+        # After FRED has been calculated for every pixel in the raster, convert the arrays into a FRFD raster and FRED Raster
+        # First, start with the FRED Raster
+        Create_Output_Singleband_Raster(raster_info=raster_info,
+                                        array=fred_array,
+                                        output_location=FRED_output_location,
+                                        raster_name=f"Ash_FRED_{ash_temperature}_{ambient_temperature}.tif")
+        del fred_array
+        # Second, create the FRFD raster stack
+        Create_Output_Multiband_Raster(raster_info = raster_info,
+                                       arrays=kelvin_stack,
+                                       output_location=FRFD_output_location,
+                                       n=n_frfds,
+                                       raster_name=f"Ash_FRFD_{ash_temperature}_{ambient_temperature}.tif")
+        del kelvin_stack
+        # Finally, loop through each raster in the kelvin stack and output individual FRFDs
+        for ind in range(0, n_frfds):
+            Create_Output_Singleband_Raster(raster_info=raster_info,
+                                            array=kelvin_stack[ind],
+                                            output_location=FRFDs_output_location,
+                                            raster_name=f"Ash_FRFD_{ash_temperature}.tif")
         del kelvin_rasters
-        # After calculating FRFD, get the pass times for FRED calculations
-        # Adapt FRED function based on raster calculator
-        # First, create a loop that includes the two rasters, as well as the pass times converted into time past (seconds).
-        FREDs = []
-        arcpy.AddMessage(len(FRFD_Rasters))
-        arcpy.AddMessage(len(pass_times))
-        arcpy.AddMessage(pass_times)
-        for d in range(1, len(FRFD_Rasters)):
-            # Collect the current date. To do subtractions between times you need a date
-            date = datetime.now().date()
-            # First time
-            t1 = datetime.combine(date, pass_times[d-1])
-            # Second time
-            t2 = datetime.combine(date, pass_times[d])
-            arcpy.AddMessage("{}".format(d))
-            #Time change
-            delta = t2-t1
-            # Calculate the sum of two FRFD Rasters
-            FRFD_Sum = (FRFD_Rasters[d] + FRFD_Rasters[d-1])
-            # Calculate FRED
-            FRED = ((FRFD_Sum) * delta.seconds) * 0.5
-            del FRFD_Sum
-            FREDs.append(FRED)
-            del FRED
-        # Establish a base raster for calculations
-        total_fred = FREDs[0]
-        # Calculate the FRED by summing all FRED calculations (trapezoids)
-        for f in FREDs[1:]:
-            total_fred = arcpy.sa.Plus(f, total_fred)
-        arcpy.AddMessage("FRED has been calculated")
-        del FREDs
-        # Save the output FRED raster to the identified location
-        total_fred.save(os.path.join(FRED_output_location, "FRED_{}.tif".format(ambient_temperature)))
-        arcpy.AddMessage("FRED has been exported")
-        del total_fred
-        # Create output string for composite band raster function
-        frfd_rasters = ";".join(FRFDs_output_location)
-        arcpy.CompositeBands_management(in_rasters=frfd_rasters, out_raster=FRFD_output_location)
-        arcpy.AddMessage("FRFD stack has been exported")
-        del frfd_rasters
+
+
 
     def postExecute(self, parameters):
         """This method takes place after outputs are processed and
