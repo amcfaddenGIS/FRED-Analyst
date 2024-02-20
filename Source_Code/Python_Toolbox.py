@@ -472,7 +472,6 @@ class Ash_Temperature_Adjustor:
     def getParameterInfo(self):
         """Define the tool parameters."""
         # To edit parameter descriptions, you must edit the associated XML file
-        params = []
         # Input_Raster_Directory
         Input_Raster_Directory = arcpy.Parameter(
             displayName="Input Kelvin Raster",
@@ -509,12 +508,7 @@ class Ash_Temperature_Adjustor:
 
         Image_Pass_Times.enabled = False
         Ambient_Temperature.value = 289
-        params.append(Input_Raster_Directory)
-        params.append(Ambient_Temperature)
-        params.append(Pass_Time_Table)
-        params.append(Image_Pass_Times)
-        params.append(Output_Directory)
-        params.append(Ash_Temperature)
+        params = [Input_Raster_Directory, Ambient_Temperature, Pass_Time_Table, Image_Pass_Times, Output_Directory, Ash_Temperature]
         return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
@@ -540,6 +534,24 @@ class Ash_Temperature_Adjustor:
         # This is where the conversion code goes
         # Create scratch folder for separated FRFDs
         # Use os.path.join with this location when calculating FRFD
+        def Create_Output_Binary_Raster(raster_info, array, output_location, raster_name):
+
+            "Output raster through GDAL"
+            # Create data source
+            driver_tiff = gdal.GetDriverByName("GTiff")
+            driver_tiff.Register()
+            file_path_output = "{}/{}".format(output_location, raster_name)
+            geotransform = raster_info["geotransform"]
+            cols = raster_info["cols"]
+            rows = raster_info["rows"]
+            projection = raster_info["projection"]
+            metadata = raster_info["metadata"]
+            create_output = driver_tiff.Create(file_path_output, cols, rows, 1, gdal.GDT_Int8)
+            band = create_output.GetRasterBand(1)
+            band.WriteArray(array)
+            create_output.SetProjection(projection)
+            create_output.SetGeoTransform(geotransform)
+            create_output.SetMetadata(metadata)
         def Get_Raster_Info(raster):
             "Extract raster information through GDAL"
             r = gdal.Open(raster)
@@ -557,9 +569,6 @@ class Ash_Temperature_Adjustor:
                 'metadata': metadata
             }
             return raster_info
-        def Create_Output_Raster(raster_info, array):
-            "Output raster through GDAL"
-            pass
         frfd_temp = arcpy.env.scratchFolder
         # Load the parameters as text
         input_raster = parameters[0].ValueAsText
@@ -567,6 +576,7 @@ class Ash_Temperature_Adjustor:
         pass_time_table = parameters[2].ValueAsText
         image_pass_time = parameters[3].ValueAsText
         out_put_path = parameters[4].ValueAsText
+        ash_temperature = parameters[5].ValueAsText
         arcpy.AddMessage(out_put_path)
         FRED_output_location = os.path.join(out_put_path + '\Ash_FRED')
         if os.path.exists(FRED_output_location):
@@ -633,40 +643,39 @@ class Ash_Temperature_Adjustor:
             for j in range(0, cols):
                 # Determine if the pixel was imaged burning
                 Temp_profile = kelvin_stack[i][j]
-                if max(kelvin_stack)[i][j] <473:
+                # Split up the profile into two part, post and pre peak if the max is greater than 473
+                # Identify index of max value using np.where
+                if max(kelvin_stack)[i][j] < 473:
                     FRFD_list = []
                     FRED_list = []
-                    # Calculate FRED normally
-                    for t in Temp_profile:
-                        FRFD_AT = s * (int(ambient_temperature) ** 4)
-                        FRFD_T = s * (t ** 4)
+                    Peak_Profile = Temp_profile[np.where(Temp_profile == Temp_profile.max())[0][0]:]
+                    Pre_Peak_Profile = Temp_profile[:np.where(Temp_profile == Temp_profile.max())[0][0]]
+                    # First calculate FRFD for the first part (pre peak) of the temporal profile
+                    for t in Pre_Peak_Profile:
+                        FRFD_AT = s * (int(ambient_temperature)**4)
+                        FRFD_T = s*(t ** 4)
                         FRFD = FRFD_T - FRFD_AT
                         if FRFD < 0:
                             FRFD_list.append(0)
                         else:
                             FRFD_list.append(FRFD)
-                    for b in range(1, len(FRFD_list)):
-                        FRFD_2 = FRFD_list[b]
-                        # Call the first FRFD array
-                        FRFD_1 = FRFD_list[b - 1]
-                        # Call the first Time in the list
-                        Time_1 = pass_times[b - 1]
-                        # Call the second Time in the list
-                        Time_2 = pass_times[b]
-                        # Convert the times to date time classes
-                        t1 = datetime.strptime(Time_1, "%H:%M:%S")
-                        # Conver the times to date teime classes
-                        t2 = datetime.strptime(Time_2, "%H:%M:%S")
-                        # Get the difference between the two time classes
-                        delta = t2 - t1
-                        # Sum up the FRFD calculations
-                        FRFD_Sum = (FRFD_2 + FRFD_1)
-                        # Any values less than 0 are converted to 0 (pixels that have temperatures below ambient
-                        if FRFD_Sum <= 0:
-                            FRFD_Sum = 0
-                        # Calculate the FRED and add it to the FRED list
-                        FRED = ((FRFD_Sum) * delta.seconds) * 0.5
-                        FRED_list.append(FRED)
+                    for t_1 in Peak_Profile:
+                        if t_1 > 473:
+                            FRFD_AT = s * (int(ambient_temperature) ** 4)
+                            FRFD_T = s * (t_1 ** 4)
+                            FRFD = FRFD_T - FRFD_AT
+                            if FRFD < 0:
+                                FRFD_list.append(0)
+                            else:
+                                FRFD_list.append(FRFD)
+                        else:
+                            FRFD_Ash = s * (int(ash_temperature) ** 4)
+                            FRFD_T = s * (t_1 ** 4)
+                            FRFD = FRFD_T - FRFD_Ash
+                            if FRFD < 0:
+                                FRFD_list.append(0)
+                            else:
+                                FRFD_list.append(FRFD)
                     fred_array[i][j] = sum(FRED_list)
                     for ind, p in enumerate(FRFD_list):
                         kelvin_stack[ind][i][j] = p
@@ -1081,6 +1090,5 @@ class Binary_Classifiers:
                                obscuration_percentage=obscuration_percent,
                                output_location=output_location)
         arcpy.AddMessage("Obscuration Classifier Complete")
-
 
 
