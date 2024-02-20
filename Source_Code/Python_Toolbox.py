@@ -645,7 +645,7 @@ class Ash_Temperature_Adjustor:
                 Temp_profile = kelvin_stack[i][j]
                 # Split up the profile into two part, post and pre peak if the max is greater than 473
                 # Identify index of max value using np.where
-                if max(kelvin_stack)[i][j] < 473:
+                if max(kelvin_stack)[i][j] > 473:
                     FRFD_list = []
                     FRED_list = []
                     Peak_Profile = Temp_profile[np.where(Temp_profile == Temp_profile.max())[0][0]:]
@@ -676,6 +676,22 @@ class Ash_Temperature_Adjustor:
                                 FRFD_list.append(0)
                             else:
                                 FRFD_list.append(FRFD)
+                    for d in range(1, len(FRFD_Rasters)):
+                        # Collect the current date. To do subtractions between times you need a date
+                        date = datetime.now().date()
+                        # First time
+                        t1 = datetime.combine(date, pass_times[d - 1])
+                        # Second time
+                        t2 = datetime.combine(date, pass_times[d])
+                        # Time change
+                        delta = t2 - t1
+                        # Calculate the sum of two FRFD Rasters
+                        FRFD_Sum = (FRFD_Rasters[d] + FRFD_Rasters[d - 1])
+                        # Calculate FRED
+                        FRED = ((FRFD_Sum) * delta.seconds) * 0.5
+                        del FRFD_Sum
+                        FRED_list.append(FRED)
+                        del FRED
                     fred_array[i][j] = sum(FRED_list)
                     for ind, p in enumerate(FRFD_list):
                         kelvin_stack[ind][i][j] = p
@@ -683,8 +699,6 @@ class Ash_Temperature_Adjustor:
                     FRFD_list = []
                     FRED_list = []
                     # Calculate FRED normally
-                    FRFDs = {"Pre": [],
-                             "Post": []}
                     for t in Temp_profile:
                         FRFD_AT = s * (int(ambient_temperature) ** 4)
                         FRFD_T = s * (t ** 4)
@@ -693,28 +707,22 @@ class Ash_Temperature_Adjustor:
                             FRFD_list.append(0)
                         else:
                             FRFD_list.append(FRFD)
-                    for b in range(1, len(FRFD_list)):
-                        FRFD_2 = FRFD_list[b]
-                        # Call the first FRFD array
-                        FRFD_1 = FRFD_list[b - 1]
-                        # Call the first Time in the list
-                        Time_1 = pass_times[b - 1]
-                        # Call the second Time in the list
-                        Time_2 = pass_times[b]
-                        # Convert the times to date time classes
-                        t1 = datetime.strptime(Time_1, "%H:%M:%S")
-                        # Conver the times to date teime classes
-                        t2 = datetime.strptime(Time_2, "%H:%M:%S")
-                        # Get the difference between the two time classes
+                    for d in range(1, len(FRFD_Rasters)):
+                        # Collect the current date. To do subtractions between times you need a date
+                        date = datetime.now().date()
+                        # First time
+                        t1 = datetime.combine(date, pass_times[d - 1])
+                        # Second time
+                        t2 = datetime.combine(date, pass_times[d])
+                        # Time change
                         delta = t2 - t1
-                        # Sum up the FRFD calculations
-                        FRFD_Sum = (FRFD_2 + FRFD_1)
-                        # Any values less than 0 are converted to 0 (pixels that have temperatures below ambient
-                        if FRFD_Sum <= 0:
-                            FRFD_Sum = 0
-                        # Calculate the FRED and add it to the FRED list
+                        # Calculate the sum of two FRFD Rasters
+                        FRFD_Sum = (FRFD_Rasters[d] + FRFD_Rasters[d - 1])
+                        # Calculate FRED
                         FRED = ((FRFD_Sum) * delta.seconds) * 0.5
+                        del FRFD_Sum
                         FRED_list.append(FRED)
+                        del FRED
                     fred_array[i][j] = sum(FRED_list)
                     for ind, p in enumerate(FRFD_list):
                         kelvin_stack[ind][i][j] = p
