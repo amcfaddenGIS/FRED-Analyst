@@ -7,30 +7,6 @@ import os
 from scipy import constants
 from PIL import Image
 
-"""
-Work on this tomorrow (fuck sake)
-Logic:
-    - Find map project (current project) 
-    - Create a new map 
-    - Create a new layout (with specified layout extent)
-    - Create a map frame with specific coordinates 
-    - Add elements (up to the user)
-    - Add dynamic title that changes based on the flight pass time and the image number 
-    
-    
-ALL DATA IS ADDED USING THE createMapSurroundElement Method for layouts
-Data: 
-    - FRFD Stack:
-        - Each band in the image stack will be visualized and added to the layout 
-        - The layout will be exported to a temporary folder as a PNG
-        - The PNGs will be stacked to create a gif 
-    - Times:
-        - Image times provided by the user in csv format 
-    - Output Location:
-        - Folder location for the animation
-    - Prefered Extent 
-        - IF you have a specific area that you want to animate, you can provide a shapefile  
-"""
 # Initialize the toolbox to contain the varying tools.
 class Toolbox:
     def __init__(self):
@@ -44,7 +20,7 @@ class Toolbox:
 
 
 class FRFD_Animator:
-    def __int__(self):
+    def __init__(self):
         self.label = "FRFD Animation"
         self.description = "Create an animation showing the progression of measured FRFDs for each image pass"
     def getParameterInfo(self):
