@@ -5,7 +5,7 @@ from arcpy import ia
 from arcpy import analysis
 import os
 from scipy import constants
-
+from PIL import Image
 
 """
 Work on this tomorrow (fuck sake)
@@ -150,9 +150,11 @@ class FRFD_Animator:
             # Create ambient temperature FRFD for remapping purposes
             s = constants.sigma
             ambient_FRFD = s * (289 ** 4)
+            image_locations = []
             for b in range(1, bands + 1):
                 # Create output location for the layout
                 output = fr'{output_location}/layout_{b}.png'
+                image_locations.append(output)
                 # Extract an individual band from the raster
                 single_raster = ia.ExtractBand(raster, [b])
                 # To properly reclassify the raster, it must be converted into an integer raster
@@ -182,6 +184,7 @@ class FRFD_Animator:
                 for f in filelist:
                     os.remove(os.path.join(reclass_location, f))
                 del filelist
+                return image_locations
         # Import all parameters
         input_raster = parameters[0].ValueAsText
         pass_time_table = parameters[1].ValueAsText
@@ -231,12 +234,17 @@ class FRFD_Animator:
                              map=m,
                              map_frame=mf)
         # Loop through each of the rasters and export the band as a new raster using the Create output images function
-        Create_Output_Images(raster=frfd_raster,
+        image_locations = Create_Output_Images(raster=frfd_raster,
                              times=dynamic_text,
                              text_element=ptTxt,
                              output_location=output_location,
                              raster_temp=raster_temp)
-
+        # With the image locations, create a gif
+        images = [Image.open(i) for i in image_locations]
+        frame_1 = images[0]
+        frame_1.save("{}/FRFD_Progression.gif".format(output_location), format="GIF",
+                         append_images=images,
+                         save_all=True, duration=150)
         def postExecute(self, parameters):
             """This method takes place after outputs are processed and
             added to the display."""
