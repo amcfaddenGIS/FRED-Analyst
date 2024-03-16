@@ -48,6 +48,7 @@ class FRFD_Animator:
                                             parameterType="Required",
                                             direction="Input")
         params = [Input_FRFD_Raster, Pass_Time_Table, Image_Pass_Times, Output_Directory]
+        return params
     def isLicensed(self):
         """Set whether the tool is licensed to execute."""
         return True
@@ -220,7 +221,7 @@ class FRFD_Animator:
         frame_1 = images[0]
         frame_1.save("{}/FRFD_Progression.gif".format(output_location), format="GIF",
                          append_images=images,
-                         save_all=True, duration=150)
+                         save_all=True, duration=1500)
         def postExecute(self, parameters):
             """This method takes place after outputs are processed and
             added to the display."""
